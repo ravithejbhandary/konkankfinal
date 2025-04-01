@@ -1648,134 +1648,205 @@ def delete_image(image_id):
 
 
 
+# Uploads Folder
+UPLOAD_FOLDER = "static/uploads"
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-uploads_folder = "static/uploads"
-for file in os.listdir(uploads_folder):
-    print(file)
-# Connect to the database
+# Ensure uploads folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# Database Connection
 def get_db_connection():
     conn = sqlite3.connect("database.db")
     conn.row_factory = sqlite3.Row
     return conn
 
-# News page (List all news)
+# Function to allow only specific file types
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif"}
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Fetch and display news
 @app.route("/")
 @app.route("/news")
 def news():
     conn = get_db_connection()
-    
-    # Fetch news with images
     news_articles = conn.execute("""
-        SELECT n.id, n.title, n.description, GROUP_CONCAT(i.image_filename) AS images
+        SELECT n.id, n.title, n.description, n.date,
+               GROUP_CONCAT(i.image_filename) AS images
         FROM news n
         LEFT JOIN news_images i ON n.id = i.news_id
-        GROUP BY n.id ORDER BY n.id DESC
+        GROUP BY n.id ORDER BY DATE(n.date) DESC
     """).fetchall()
-    
     conn.close()
 
-    # Convert images column to lists
-    formatted_news = []
-    for news in news_articles:
-        formatted_news.append({
-            "id": news["id"],
-            "title": news["title"],
-            "description": news["description"],
-            "images": news["images"].split(",") if news["images"] else []
-        })
+    formatted_news = [
+        {
+            "id": article["id"],
+            "title": article["title"],
+            "description": article["description"],
+            "date": article["date"],
+            "images": article["images"].split(",") if article["images"] else []
+        }
+        for article in news_articles
+    ]
 
     return render_template("news.html", news=formatted_news)
 
+@app.route('/news/<int:news_id>')
+def news_details(news_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-# Admin Panel (Upload News)
-@app.route("/admin", methods=["GET", "POST"])
-def upload_news():
-    if request.method == "POST":
-        title = request.form["title"]
-        description = request.form["description"]
-        content = request.form["content"]
-        images = request.files.getlist("images")
+    # Fetch news details
+    cursor.execute("SELECT title, content FROM news WHERE id = ?", (news_id,))
+    news_data = cursor.fetchone()
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    # Fetch associated images
+    cursor.execute("SELECT image_filename FROM news_images WHERE news_id = ?", (news_id,))
+    images = [row["image_filename"] for row in cursor.fetchall()]
 
-        # Insert news article into 'news' table
-        cursor.execute("INSERT INTO news (title, description, content) VALUES (?, ?, ?)", 
-                       (title, description, content))
-        news_id = cursor.lastrowid  # Get the last inserted news ID
+    conn.close()
 
-        # Save images & insert file paths
-        for image in images:
-            if image and image.filename:
-                filename = f"{news_id}_{image.filename}"
-                filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-                image.save(filepath)
+    if news_data:
+        news = {
+            "title": news_data["title"],
+            "content": news_data["content"] if news_data["content"] else "No content available",
+            "images": images
+        }
+        return render_template("news_details.html", news=news)
+    else:
+        return "News Not Found", 404
 
-                # Insert image filename into 'news_images' table
-                cursor.execute("INSERT INTO news_images (news_id, image_filename) VALUES (?, ?)", 
-                               (news_id, filename))
-
-        conn.commit()
-        conn.close()
-
-        # return redirect(url_for("upload_news"))  # Redirect back to admin panel
-        return redirect(url_for("news"))
-    
-    
+# Admin Portal
 @app.route("/admin")
 def admin_portal():
     conn = get_db_connection()
     news_articles = conn.execute("""
-        SELECT n.id, n.title, n.description, 
-               COALESCE(GROUP_CONCAT(i.image_filename), '') AS images
+        SELECT n.id, n.title, n.description, COALESCE(n.content, '') AS content, 
+               n.date, COALESCE(GROUP_CONCAT(i.image_filename), '') AS images
         FROM news n
         LEFT JOIN news_images i ON n.id = i.news_id
-        GROUP BY n.id ORDER BY n.id DESC
+        GROUP BY n.id ORDER BY DATE(n.date) DESC
     """).fetchall()
     conn.close()
 
-    # Convert images column to lists
-    formatted_news = []
-    for news in news_articles:
-        print(news)  # ✅ Debugging: Print each news entry
-        formatted_news.append({
-            "id": news["id"],
-            "title": news["title"],
-            "description": news["description"],
-            "images": news["images"].split(",") if news["images"] else []  # Fix: Ensure images are a list
-        })
+    formatted_news = [
+        {
+            "id": article["id"],
+            "title": article["title"],
+            "description": article["description"],
+            "content": article["content"],
+            "date": article["date"],
+            "images": article["images"].split(",") if article["images"] else []
+        }
+        for article in news_articles
+    ]
 
-    print("Formatted News:", formatted_news)  # ✅ Check output in console
+    return render_template("admin.html", news_articles=formatted_news)
 
-    return render_template("admin.html", news_articles=formatted_news)  # Fix: Pass formatted_news instead
+# Upload News
+@app.route("/admin/upload", methods=["POST"])
+def upload_news():
+    title = request.form["title"]
+    description = request.form["description"]
+    content = request.form["content"]
+    date = request.form["date"]
+    images = request.files.getlist("images")
 
-
-
-
-# News details page
-@app.route("/news/<int:news_id>")
-def news_details(news_id):
     conn = get_db_connection()
-    news_item = conn.execute("SELECT * FROM news WHERE id = ?", (news_id,)).fetchone()
-    images = conn.execute("SELECT image_filename FROM news_images WHERE news_id = ?", (news_id,)).fetchall()
-    conn.close()
-
-    return render_template("news_details.html", news=news_item, images=images)
-
-
-# Delete News Article
-@app.route("/delete-news/<int:news_id>", methods=["DELETE"])
-def delete_news(news_id):
-    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO news (title, description, content, date) VALUES (?, ?, ?, ?)",
+        (title, description, content, date),
+    )
+    news_id = cursor.lastrowid
 
-    # Delete the news entry
-    cursor.execute("DELETE FROM news WHERE id = ?", (news_id,))
+    for image in images:
+        if image and image.filename:
+            filename = f"{news_id}_{secure_filename(image.filename)}"
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            image.save(filepath)
+            cursor.execute("INSERT INTO news_images (news_id, image_filename) VALUES (?, ?)", (news_id, filename))
+
     conn.commit()
     conn.close()
 
-    return jsonify({"success": True, "message": "News deleted successfully!"})
+    return redirect(url_for("admin_portal"))
 
+@app.route('/update_news/<int:news_id>', methods=['POST'])
+def update_news(news_id):
+    title = request.form.get("title", "").strip()  # Use .get() to avoid KeyError
+    description = request.form.get("description", "").strip()
+    content = request.form.get("content", "").strip()
+
+    if not title:  # Ensure title is provided
+        return "Title is required", 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE news SET title = ?, description = ?, content = ? WHERE id = ?",
+            (title, description, content, news_id),
+        )
+        conn.commit()
+        conn.close()
+        return redirect(url_for("admin_portal"))
+    except Exception as e:
+        print(f"Error updating news: {e}")
+        return "Error updating news", 500
+
+# Delete News
+@app.route('/delete_news/<int:news_id>', methods=['POST'])
+def delete_news(news_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Delete images from folder & DB
+        cursor.execute("SELECT image_filename FROM news_images WHERE news_id = ?", (news_id,))
+        images = [row["image_filename"] for row in cursor.fetchall()]
+
+        for image in images:
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], image)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+
+        cursor.execute("DELETE FROM news_images WHERE news_id = ?", (news_id,))
+        cursor.execute("DELETE FROM news WHERE id = ?", (news_id,))
+        conn.commit()
+        conn.close()
+
+        return redirect(url_for("admin_portal"))
+    except Exception as e:
+        print(f"Error deleting news: {e}")
+        return "Error deleting news", 500
+
+# Add Images to Existing News
+@app.route("/add_news_images/<int:news_id>", methods=["POST"])    
+def add_news_images(news_id):
+    if 'images' not in request.files:
+        return "No images provided", 400
+
+    images = request.files.getlist("images")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    for image in images:
+        if image and allowed_file(image.filename):
+            filename = f"{news_id}_{secure_filename(image.filename)}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            image.save(filepath)
+
+            # Store in database
+            cursor.execute("INSERT INTO news_images (news_id, image_filename) VALUES (?, ?)", (news_id, filename))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for("admin_portal"))
 
 @app.route('/contact')
 def contact():
