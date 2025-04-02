@@ -9,7 +9,7 @@
     <!-- Stylesheets -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/Header.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nheader.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/about.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/contact.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font/css/materialdesignicons.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -27,7 +27,7 @@
         data-contact="{{ url_for('contact') }}" data-logo="{{ url_for('static', filename='images/logo.png') }}"
         data-menu-icon="{{ url_for('static', filename='images/hamburger.png') }}"
         data-authenticated="{{ 'true' if 'user_id' in session else 'false' }}" data-profile="{{ url_for('profile') }}"
-        data-logout="{{ url_for('logout') }}" data-login="{{ url_for('login') }}" data-join="{{ url_for('join_page') }}"
+        data-logout="{{ url_for('logout') }}" data-login="{{ url_for('login') }}" data-join="{{ url_for('join_page') }}">
         </custom-navbar>
 
         <!-- Main Section -->
